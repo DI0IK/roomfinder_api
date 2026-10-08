@@ -1,0 +1,14 @@
+# Gleam build output
+/build
+erl_crash.dump
+*.beam
+*.ez
+
+# Editor & OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
