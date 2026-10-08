@@ -1,0 +1,86 @@
+name: CI & Container Registry (Native NixOS)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  pull_request:
+
+jobs:
+  test:
+    runs-on: native
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download dependencies
+        run: devenv shell -- gleam deps download
+
+      - name: Check code formatting
+        run: devenv shell -- gleam format --check src test
+
+      - name: Static type checking
+        run: devenv shell -- gleam check
+
+      - name: Run test suite
+        run: devenv shell -- gleam test
+
+  publish-container:
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: native
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set image details
+        id: vars
+        env:
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          server_host="${SERVER_URL#*://}"
+          server_host="${server_host%%/*}"
+          image_path="${server_host}/$(tr '[:upper:]' '[:lower:]' <<< "$REPOSITORY")"
+
+          tags="${image_path}:$(cut -c1-7 <<< "$SHA")"
+          case "$REF" in
+            refs/heads/main|refs/heads/master) tags="${tags},${image_path}:latest" ;;
+            refs/tags/v*) tags="${tags},${image_path}:${REF_NAME}" ;;
+          esac
+
+          container_cli="$(command -v docker 2>/dev/null || command -v podman 2>/dev/null || true)"
+          if [ -z "$container_cli" ]; then
+            echo "::error::Neither docker nor podman found in PATH"
+            exit 1
+          fi
+
+          echo "container_cli=${container_cli}" >> "$GITHUB_OUTPUT"
+          echo "server_host=${server_host}" >> "$GITHUB_OUTPUT"
+          echo "image_path=${image_path}" >> "$GITHUB_OUTPUT"
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Forgejo Container Registry
+        shell: bash
+        run: |
+          echo "${{ secrets.REGISTRY_TOKEN || secrets.CONTAINER_REGISTRY_TOKEN || secrets.FORGEJO_TOKEN || secrets.GITHUB_TOKEN }}" | ${{ steps.vars.outputs.container_cli }} login "${{ steps.vars.outputs.server_host }}" -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push container image
+        shell: bash
+        run: |
+          IFS=',' read -ra TAG_LIST <<< "${{ steps.vars.outputs.tags }}"
+          build_args=()
+          for tag in "${TAG_LIST[@]}"; do
+            build_args+=(-t "$tag")
+          done
+          ${{ steps.vars.outputs.container_cli }} build "${build_args[@]}" .
+          for tag in "${TAG_LIST[@]}"; do
+            ${{ steps.vars.outputs.container_cli }} push "$tag"
+          done

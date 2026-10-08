@@ -1,5 +1,5 @@
 # Dockerfile for DHBW Roomfinder API
-FROM ghcr.io/gleam-lang/gleam:v1.18.1-erlang-alpine AS builder
+FROM ghcr.io/gleam-lang/gleam:v1.19.0-erlang-alpine AS builder
 
 WORKDIR /build
 
@@ -19,8 +19,8 @@ RUN gleam test
 RUN gleam export erlang-shipment
 
 # --- Production Runner Stage ---
-# Must match Erlang OTP release (OTP 29)
-FROM docker.io/library/erlang:alpine
+# Must match Erlang OTP release
+FROM docker.io/library/erlang:28-alpine
 
 WORKDIR /app
 

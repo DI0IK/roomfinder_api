@@ -2,7 +2,8 @@ import domain/event.{TimeSlot}
 import gleeunit/should
 import parser/ics
 
-const sample_ics = "BEGIN:VCALENDAR
+const sample_ics =
+  "BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//DHBW//DHBW.app//DE
 BEGIN:VTIMEZONE
