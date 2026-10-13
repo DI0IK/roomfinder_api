@@ -1,5 +1,5 @@
 import birl
-import domain/event.{type TimeSlot}
+import domain/event.{type BookingDetail, BookingDetail}
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode
 import gleam/erlang/process.{type Subject}
@@ -78,7 +78,7 @@ pub fn run_sync(
     list.fold(courses, dict.new(), fn(acc_schedules, course_name) {
       let acc = case fetch_course_ics(course_name) {
         Ok(ics_body) -> {
-          let bookings = ics.parse_ics(ics_body, re)
+          let bookings = ics.parse_ics_with_course(ics_body, course_name, re)
           merge_bookings(acc_schedules, bookings)
         }
         Error(_) -> acc_schedules
@@ -98,18 +98,57 @@ pub fn run_sync(
   Ok(room_count)
 }
 
-fn merge_bookings(
-  schedules: Dict(String, List(TimeSlot)),
+pub fn merge_bookings(
+  schedules: Dict(String, List(BookingDetail)),
   bookings: List(ics.RoomBooking),
-) -> Dict(String, List(TimeSlot)) {
+) -> Dict(String, List(BookingDetail)) {
   list.fold(bookings, schedules, fn(acc, booking) {
+    let courses = case booking.course {
+      "" -> []
+      c -> [c]
+    }
+    let new_detail =
+      BookingDetail(
+        start: booking.slot.start,
+        end: booking.slot.end,
+        summary: booking.summary,
+        courses: courses,
+      )
+
     dict.upsert(acc, booking.room, fn(existing) {
       case existing {
-        Some(slots) -> [booking.slot, ..slots]
-        None -> [booking.slot]
+        Some(list_details) -> add_or_merge_booking(list_details, new_detail)
+        None -> [new_detail]
       }
     })
   })
+}
+
+fn add_or_merge_booking(
+  existing: List(BookingDetail),
+  new_booking: BookingDetail,
+) -> List(BookingDetail) {
+  case existing {
+    [] -> [new_booking]
+    [b, ..rest] ->
+      case
+        b.start == new_booking.start
+        && b.end == new_booking.end
+        && b.summary == new_booking.summary
+      {
+        True -> {
+          let merged_courses =
+            list.fold(new_booking.courses, b.courses, fn(acc, c) {
+              case list.contains(acc, c) {
+                True -> acc
+                False -> list.append(acc, [c])
+              }
+            })
+          [BookingDetail(..b, courses: merged_courses), ..rest]
+        }
+        False -> [b, ..add_or_merge_booking(rest, new_booking)]
+      }
+  }
 }
 
 pub fn fetch_course_list() -> Result(List(String), String) {

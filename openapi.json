@@ -272,6 +272,19 @@
                           "end": {
                             "type": "integer",
                             "example": 1791442800
+                          },
+                          "summary": {
+                            "type": "string",
+                            "example": "Programmieren"
+                          },
+                          "courses": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "example": [
+                              "KA-TINF24B1"
+                            ]
                           }
                         }
                       }

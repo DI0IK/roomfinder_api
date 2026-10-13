@@ -111,7 +111,7 @@ fn find_free_rooms(req: Request, ctx: Context) -> Response {
   }
 }
 
-/// Feature 2: Raum + Uhrzeit => frei oder nicht
+/// Feature 2: Raum + Uhrzeit => frei oder nicht mit Belegungsdetails
 fn check_room(req: Request, ctx: Context, room_name: String) -> Response {
   let query = wisp.get_query(req)
 
@@ -133,10 +133,12 @@ fn check_room(req: Request, ctx: Context, room_name: String) -> Response {
         #("to_unix", json.int(to_unix)),
         #(
           "busy_during",
-          json.array(availability.busy_during, fn(slot) {
+          json.array(availability.busy_during, fn(b) {
             json.object([
-              #("start", json.int(slot.start)),
-              #("end", json.int(slot.end)),
+              #("start", json.int(b.start)),
+              #("end", json.int(b.end)),
+              #("summary", json.string(b.summary)),
+              #("courses", json.array(b.courses, json.string)),
             ])
           }),
         ),

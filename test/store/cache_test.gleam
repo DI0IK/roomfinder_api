@@ -1,12 +1,17 @@
-import domain/event.{TimeSlot}
+import domain/event.{type BookingDetail, BookingDetail}
 import domain/room.{RoomId}
 import gleam/dict
 import gleam/erlang/process
 import gleam/option.{None, Some}
 import gleeunit/should
 import store/cache.{
-  type RoomAvailability, CheckRoom, FindFreeRooms, GetStatus, RoomResult,
-  UpdateSchedules, check_room_availability, find_free_rooms,
+  type RoomAvailability, CheckRoom, FindFreeRooms, GetRoomBlockings, GetStatus,
+  RoomResult, UpdateSchedules, check_room_availability, find_free_rooms,
+  get_room_blockings,
+}
+
+fn b(start: Int, end: Int) -> BookingDetail {
+  BookingDetail(start: start, end: end, summary: "", courses: [])
 }
 
 pub fn find_free_rooms_sorting_by_distance_test() {
@@ -14,8 +19,8 @@ pub fn find_free_rooms_sorting_by_distance_test() {
 
   let schedules =
     dict.from_list([
-      #("A171", [TimeSlot(100, 200)]),
-      #("A172", [TimeSlot(300, 400)]),
+      #("A171", [b(100, 200)]),
+      #("A172", [b(300, 400)]),
       #("A173", []),
       #("A271", []),
       #("B171", []),
@@ -81,8 +86,8 @@ pub fn find_free_rooms_when_all_rooms_busy_test() {
 
   let schedules =
     dict.from_list([
-      #("A171", [TimeSlot(100, 200)]),
-      #("A172", [TimeSlot(50, 150)]),
+      #("A171", [b(100, 200)]),
+      #("A172", [b(50, 150)]),
     ])
 
   let results = find_free_rooms(schedules, near, 120, 180, 10)
@@ -98,7 +103,7 @@ pub fn find_free_rooms_empty_schedule_test() {
 pub fn check_room_availability_free_test() {
   let schedules =
     dict.from_list([
-      #("A171", [TimeSlot(100, 200)]),
+      #("A171", [b(100, 200)]),
     ])
 
   let avail = check_room_availability(schedules, "A171", 200, 300)
@@ -112,12 +117,26 @@ pub fn check_room_availability_free_test() {
 }
 
 pub fn check_room_availability_busy_test() {
-  let busy_slot = TimeSlot(100, 200)
-  let schedules = dict.from_list([#("A171", [busy_slot])])
+  let busy_booking =
+    BookingDetail(start: 100, end: 200, summary: "Programmieren", courses: [
+      "KA-TINF24B1",
+    ])
+  let schedules = dict.from_list([#("A171", [busy_booking])])
 
   let avail = check_room_availability(schedules, "A171", 150, 250)
   avail.is_free |> should.be_false
-  avail.busy_during |> should.equal([busy_slot])
+  avail.busy_during |> should.equal([busy_booking])
+}
+
+pub fn get_room_blockings_test() {
+  let b1 = BookingDetail(100, 200, "Lecture 1", ["C1"])
+  let b2 = BookingDetail(300, 400, "Lecture 2", ["C2"])
+  let b3 = BookingDetail(500, 600, "Lecture 3", ["C3"])
+  let schedules = dict.from_list([#("A171", [b3, b1, b2])])
+
+  let res = get_room_blockings(schedules, "A171", 150, 350)
+  // Should return b1 and b2 sorted chronologically
+  res |> should.equal([b1, b2])
 }
 
 pub fn actor_lifecycle_and_updates_test() {
@@ -130,7 +149,7 @@ pub fn actor_lifecycle_and_updates_test() {
   status1.last_updated_unix |> should.equal(0)
 
   // 2. Push initial schedule
-  let sched1 = dict.from_list([#("A171", [TimeSlot(100, 200)])])
+  let sched1 = dict.from_list([#("A171", [b(100, 200)])])
   process.call(cache_subj, 1000, fn(reply_to) {
     UpdateSchedules(sched1, 1_000_000, reply_to)
   })
@@ -174,4 +193,11 @@ pub fn actor_lifecycle_and_updates_test() {
       CheckRoom("A171", 100, 200, reply_to)
     })
   check_res.is_free |> should.be_true
+
+  // 6. Query GetRoomBlockings via actor
+  let blockings_res: List(BookingDetail) =
+    process.call(cache_subj, 1000, fn(reply_to) {
+      GetRoomBlockings("A171", 100, 200, reply_to)
+    })
+  blockings_res |> should.equal([])
 }

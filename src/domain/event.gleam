@@ -7,11 +7,24 @@ pub type TimeSlot {
   TimeSlot(start: Int, end: Int)
 }
 
+pub type BookingDetail {
+  BookingDetail(start: Int, end: Int, summary: String, courses: List(String))
+}
+
 /// Checks if two time intervals overlap.
 /// An event occupying [slot.start, slot.end] overlaps with [query_start, query_end]
 /// if slot.start < query_end and slot.end > query_start.
 pub fn overlaps(slot: TimeSlot, query_start: Int, query_end: Int) -> Bool {
   slot.start < query_end && slot.end > query_start
+}
+
+/// Checks if a booking overlaps with the given query window.
+pub fn booking_overlaps(
+  booking: BookingDetail,
+  query_start: Int,
+  query_end: Int,
+) -> Bool {
+  booking.start < query_end && booking.end > query_start
 }
 
 /// Checks if a list of booked time slots is free during the given query window.
@@ -26,6 +39,22 @@ pub fn is_free(
       case overlaps(slot, query_start, query_end) {
         True -> False
         False -> is_free(rest, query_start, query_end)
+      }
+  }
+}
+
+/// Checks if a list of booking details is free during the given query window.
+pub fn is_booking_free(
+  bookings: List(BookingDetail),
+  query_start: Int,
+  query_end: Int,
+) -> Bool {
+  case bookings {
+    [] -> True
+    [booking, ..rest] ->
+      case booking_overlaps(booking, query_start, query_end) {
+        True -> False
+        False -> is_booking_free(rest, query_start, query_end)
       }
   }
 }

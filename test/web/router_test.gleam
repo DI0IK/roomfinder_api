@@ -1,4 +1,4 @@
-import domain/event.{TimeSlot}
+import domain/event.{type BookingDetail, BookingDetail}
 import gleam/dict
 import gleam/erlang/process
 import gleam/http.{Get, Post}
@@ -14,6 +14,10 @@ fn response_body(res: Response) -> String {
     Text(body_str) -> body_str
     _ -> ""
   }
+}
+
+fn b(start: Int, end: Int) -> BookingDetail {
+  BookingDetail(start: start, end: end, summary: "", courses: [])
 }
 
 pub fn health_endpoint_test() {
@@ -33,7 +37,7 @@ pub fn status_endpoint_test() {
 
   let schedules =
     dict.from_list([
-      #("A171", [TimeSlot(100, 200)]),
+      #("A171", [b(100, 200)]),
       #("A172", []),
     ])
 
@@ -81,7 +85,7 @@ pub fn find_free_rooms_with_human_date_and_time_test() {
 
   let schedules =
     dict.from_list([
-      #("A171", [TimeSlot(1_790_838_000, 1_790_841_600)]),
+      #("A171", [b(1_790_838_000, 1_790_841_600)]),
       #("A172", []),
       #("B101", []),
     ])
@@ -110,7 +114,7 @@ pub fn find_free_rooms_with_unix_timestamps_test() {
 
   let schedules =
     dict.from_list([
-      #("A171", [TimeSlot(100, 200)]),
+      #("A171", [b(100, 200)]),
       #("A172", []),
       #("A173", []),
     ])
@@ -137,8 +141,14 @@ pub fn check_room_with_human_date_and_time_test() {
   let assert Ok(cache_subj) = cache.start()
   let ctx = Context(cache_subject: cache_subj)
 
-  let busy_slot = TimeSlot(1_790_838_000, 1_790_841_600)
-  let schedules = dict.from_list([#("A171", [busy_slot])])
+  let busy_booking =
+    BookingDetail(
+      start: 1_790_838_000,
+      end: 1_790_841_600,
+      summary: "Programmieren",
+      courses: ["KA-TINF24B1"],
+    )
+  let schedules = dict.from_list([#("A171", [busy_booking])])
 
   process.call(cache_subj, 1000, fn(reply_to) {
     UpdateSchedules(schedules, 1_700_000_000, reply_to)
@@ -153,11 +163,8 @@ pub fn check_room_with_human_date_and_time_test() {
   res_busy.status |> should.equal(200)
   let body_busy = response_body(res_busy)
   string.contains(body_busy, "\"is_free\":false") |> should.be_true
-  string.contains(
-    body_busy,
-    "\"busy_during\":[{\"start\":1790838000,\"end\":1790841600}]",
-  )
-  |> should.be_true
+  string.contains(body_busy, "\"summary\":\"Programmieren\"") |> should.be_true
+  string.contains(body_busy, "\"courses\":[\"KA-TINF24B1\"]") |> should.be_true
 
   let req_free =
     simulate.request(
@@ -175,8 +182,11 @@ pub fn check_room_with_unix_timestamps_test() {
   let assert Ok(cache_subj) = cache.start()
   let ctx = Context(cache_subject: cache_subj)
 
-  let busy_slot = TimeSlot(100, 200)
-  let schedules = dict.from_list([#("A171", [busy_slot])])
+  let busy_booking =
+    BookingDetail(start: 100, end: 200, summary: "BWL 1", courses: [
+      "KA-TINF24B1",
+    ])
+  let schedules = dict.from_list([#("A171", [busy_booking])])
 
   process.call(cache_subj, 1000, fn(reply_to) {
     UpdateSchedules(schedules, 1_700_000_000, reply_to)
@@ -187,6 +197,8 @@ pub fn check_room_with_unix_timestamps_test() {
   let res_busy = router.handle_request(req_busy, ctx)
   res_busy.status |> should.equal(200)
   string.contains(response_body(res_busy), "\"is_free\":false")
+  |> should.be_true
+  string.contains(response_body(res_busy), "\"summary\":\"BWL 1\"")
   |> should.be_true
 
   let req_free =

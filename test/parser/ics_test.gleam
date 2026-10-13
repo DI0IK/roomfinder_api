@@ -126,3 +126,40 @@ END:VCALENDAR"
   }
   len |> should.equal(1)
 }
+
+pub fn parse_ics_with_course_and_summary_test() {
+  let re = ics.room_regex()
+  let bookings = ics.parse_ics_with_course(sample_ics, "KA-TINF24B1", re)
+
+  let b = case bookings {
+    [b1, ..] -> b1
+    _ -> panic as "expected bookings"
+  }
+
+  b.course |> should.equal("KA-TINF24B1")
+  b.summary |> should.equal("Lecture 2")
+}
+
+pub fn parse_ics_with_line_unfolding_and_escapes_test() {
+  let re = ics.room_regex()
+  let content =
+    "BEGIN:VCALENDAR
+BEGIN:VEVENT
+DTSTART;TZID=Europe/Berlin:20261001T090000
+DTEND;TZID=Europe/Berlin:20261001T121500
+SUMMARY:Klausur Informatik 1 (90 min)\\,
+  Teil 1
+LOCATION:A171
+END:VEVENT
+END:VCALENDAR"
+
+  let bookings = ics.parse_ics_with_course(content, "KA-TINF24B1", re)
+  case bookings {
+    [b] -> {
+      b.room |> should.equal("A171")
+      b.summary |> should.equal("Klausur Informatik 1 (90 min), Teil 1")
+      b.course |> should.equal("KA-TINF24B1")
+    }
+    _ -> panic as "expected 1 booking"
+  }
+}

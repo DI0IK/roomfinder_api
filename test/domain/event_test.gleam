@@ -220,3 +220,18 @@ pub fn parse_datetime_invalid_formats_test() {
   event.parse_datetime_to_unix("20260001T120000", True)
   |> should.equal(Error(Nil))
 }
+
+pub fn booking_overlaps_and_is_booking_free_test() {
+  let b =
+    event.BookingDetail(start: 100, end: 200, summary: "Lecture", courses: [
+      "KA-TINF24B1",
+    ])
+
+  event.booking_overlaps(b, 50, 100) |> should.be_false
+  event.booking_overlaps(b, 50, 150) |> should.be_true
+  event.booking_overlaps(b, 200, 250) |> should.be_false
+
+  event.is_booking_free([], 100, 200) |> should.be_true
+  event.is_booking_free([b], 50, 100) |> should.be_true
+  event.is_booking_free([b], 150, 250) |> should.be_false
+}

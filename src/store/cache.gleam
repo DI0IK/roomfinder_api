@@ -1,4 +1,4 @@
-import domain/event.{type TimeSlot}
+import domain/event.{type BookingDetail}
 import domain/room.{type RoomId}
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
@@ -14,7 +14,11 @@ pub type RoomResult {
 }
 
 pub type RoomAvailability {
-  RoomAvailability(room: String, is_free: Bool, busy_during: List(TimeSlot))
+  RoomAvailability(
+    room: String,
+    is_free: Bool,
+    busy_during: List(BookingDetail),
+  )
 }
 
 pub type CacheStatus {
@@ -22,7 +26,7 @@ pub type CacheStatus {
 }
 
 pub type State {
-  State(schedules: Dict(String, List(TimeSlot)), last_updated_unix: Int)
+  State(schedules: Dict(String, List(BookingDetail)), last_updated_unix: Int)
 }
 
 pub type Message {
@@ -41,9 +45,16 @@ pub type Message {
     end_unix: Int,
     reply_to: Subject(RoomAvailability),
   )
+  /// Gets all blockings for a room during [start_unix, end_unix]
+  GetRoomBlockings(
+    room_name: String,
+    start_unix: Int,
+    end_unix: Int,
+    reply_to: Subject(List(BookingDetail)),
+  )
   /// Atomically updates the entire schedule snapshot in memory
   UpdateSchedules(
-    schedules: Dict(String, List(TimeSlot)),
+    schedules: Dict(String, List(BookingDetail)),
     updated_at_unix: Int,
     reply_to: Subject(Nil),
   )
@@ -87,6 +98,13 @@ fn handle_message(state: State, msg: Message) -> actor.Next(State, Message) {
       actor.continue(state)
     }
 
+    GetRoomBlockings(room_name, start_unix, end_unix, reply_to) -> {
+      let blockings =
+        get_room_blockings(state.schedules, room_name, start_unix, end_unix)
+      process.send(reply_to, blockings)
+      actor.continue(state)
+    }
+
     UpdateSchedules(new_schedules, updated_at_unix, reply_to) -> {
       process.send(reply_to, Nil)
       actor.continue(State(
@@ -108,20 +126,32 @@ fn handle_message(state: State, msg: Message) -> actor.Next(State, Message) {
   }
 }
 
-/// Pure helper: checks availability and conflicting slots for a specific room.
-pub fn check_room_availability(
-  schedules: Dict(String, List(TimeSlot)),
+/// Pure helper: returns all blockings overlapping [start_unix, end_unix] for a room,
+/// sorted chronologically by start timestamp.
+pub fn get_room_blockings(
+  schedules: Dict(String, List(BookingDetail)),
   room_name: String,
   start_unix: Int,
   end_unix: Int,
-) -> RoomAvailability {
-  let slots = case dict.get(schedules, room_name) {
+) -> List(BookingDetail) {
+  let bookings = case dict.get(schedules, room_name) {
     Ok(s) -> s
     Error(Nil) -> []
   }
 
-  let conflicts =
-    list.filter(slots, fn(slot) { event.overlaps(slot, start_unix, end_unix) })
+  bookings
+  |> list.filter(fn(b) { event.booking_overlaps(b, start_unix, end_unix) })
+  |> list.sort(fn(a, b) { int.compare(a.start, b.start) })
+}
+
+/// Pure helper: checks availability and conflicting blockings for a specific room.
+pub fn check_room_availability(
+  schedules: Dict(String, List(BookingDetail)),
+  room_name: String,
+  start_unix: Int,
+  end_unix: Int,
+) -> RoomAvailability {
+  let conflicts = get_room_blockings(schedules, room_name, start_unix, end_unix)
 
   RoomAvailability(
     room: room_name,
@@ -134,7 +164,7 @@ pub fn check_room_availability(
 /// If `near` is provided, sorts by distance ascending.
 /// If `near` is None, sorts alphabetically by room name.
 pub fn find_free_rooms(
-  schedules: Dict(String, List(TimeSlot)),
+  schedules: Dict(String, List(BookingDetail)),
   near: Option(RoomId),
   start_unix: Int,
   end_unix: Int,
@@ -142,8 +172,8 @@ pub fn find_free_rooms(
 ) -> List(RoomResult) {
   dict.to_list(schedules)
   |> list.filter_map(fn(entry) {
-    let #(room_name, slots) = entry
-    case event.is_free(slots, start_unix, end_unix) {
+    let #(room_name, bookings) = entry
+    case event.is_booking_free(bookings, start_unix, end_unix) {
       True -> {
         case near {
           Some(origin) -> {

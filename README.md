@@ -89,7 +89,9 @@ GET /api/v1/rooms/A171/check?from=1790838000&to=1790845200
   "busy_during": [
     {
       "start": 1790838000,
-      "end": 1790841600
+      "end": 1790841600,
+      "summary": "Programmieren",
+      "courses": ["KA-TINF24B1"]
     }
   ]
 }
@@ -101,6 +103,8 @@ GET /api/v1/rooms/A171/check?from=1790838000&to=1790845200
 
 - `GET /health` -> `{"status":"ok"}`
 - `GET /api/v1/status` -> `{"total_rooms": 142, "last_updated_unix": 1790835000}`
+- `GET /docs` -> Swagger UI interactive documentation
+- `GET /openapi.json` -> OpenAPI 3.1 specification
 
 ---
 
